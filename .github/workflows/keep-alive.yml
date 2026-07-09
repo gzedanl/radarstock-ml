@@ -1,0 +1,18 @@
+name: Keep-alive ping
+
+# Render duerme el servicio free tier tras ~15 min sin tráfico, y
+# despertarlo tarda 50+ segundos — más que el timeout de 8s que usa el
+# frontend para llamar a /predict (ver lib/mlService.ts en el repo
+# radarstock). Este workflow lo mantiene despierto pingueando /health
+# cada 10 minutos, sin autenticación (el endpoint es público).
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping /health
+        run: curl -fsS https://radarstock-ml.onrender.com/health

@@ -32,3 +32,8 @@ uvicorn main:app --reload --port 8000
 
 Incluye un `Dockerfile` simple, pensado para cualquier PaaS con soporte
 Docker (no Railway). Variables de entorno requeridas: ver `.env.example`.
+
+En Render (free tier) el servicio se duerme tras ~15 min sin tráfico y
+tarda 50+ segundos en despertar — más que el timeout de 8s del frontend
+al llamar `/predict`. `.github/workflows/keep-alive.yml` pinguea
+`/health` cada 10 min para evitarlo.
