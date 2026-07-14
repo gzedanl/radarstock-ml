@@ -1,12 +1,38 @@
+import hashlib
+import json
 import logging
 from typing import Optional
 
 from models.schemas import Escenarios, PredictResponse
+from services.cache import cached
 from services.lstm_model import LSTMNoDisponibleError, predict_with_lstm
 from services.prophet_model import SerieMuyCortaError, predict_with_prophet
 from services.simple_predict import predict_simple
 
 logger = logging.getLogger(__name__)
+
+# Entrenar Prophet y/o LSTM desde cero es el costo real de /predict (varios
+# segundos de CPU por SKU). Cachear por input evita reentrenar cuando el
+# mismo SKU se vuelve a pedir con los mismos datos poco después — reintentos
+# tras un timeout del lado de Next.js, o un "recalcular" manual justo
+# después de subir el CSV. Si ventas_historicas cambia, la key cambia y se
+# reentrena — nunca sirve una predicción calculada con datos viejos.
+TTL_PREDICTION_SECONDS = 6 * 3600
+
+
+def _prediction_cache_key(
+    sku: str,
+    ventas_historicas: list[float],
+    stock_actual: float,
+    fechas: Optional[list[str]],
+    modelo: str,
+) -> str:
+    payload = json.dumps(
+        {"v": ventas_historicas, "s": stock_actual, "f": fechas, "m": modelo},
+        sort_keys=True,
+    )
+    digest = hashlib.sha256(payload.encode()).hexdigest()[:16]
+    return f"predict:{sku}:{digest}"
 
 
 def _avg_optional(a: Optional[int], b: Optional[int]) -> Optional[int]:
@@ -35,6 +61,25 @@ def _combine(a: PredictResponse, b: PredictResponse) -> PredictResponse:
 
 
 def predict_smart(
+    sku: str,
+    ventas_historicas: list[float],
+    stock_actual: float,
+    fechas: Optional[list[str]],
+    modelo: str,
+) -> PredictResponse:
+    """Envoltorio con cache sobre _predict_smart_uncached — ver
+    TTL_PREDICTION_SECONDS arriba para el motivo."""
+    key = _prediction_cache_key(sku, ventas_historicas, stock_actual, fechas, modelo)
+    return cached(
+        key,
+        TTL_PREDICTION_SECONDS,
+        lambda: _predict_smart_uncached(
+            sku, ventas_historicas, stock_actual, fechas, modelo
+        ),
+    )
+
+
+def _predict_smart_uncached(
     sku: str,
     ventas_historicas: list[float],
     stock_actual: float,
