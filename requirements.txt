@@ -5,3 +5,5 @@ python-dotenv==1.0.1
 httpx==0.27.2
 prophet==1.3.0
 tensorflow==2.21.0
+redis==5.0.8
+rq==2.0.0
